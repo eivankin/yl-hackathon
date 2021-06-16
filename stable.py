@@ -36,6 +36,9 @@ class Vector:
     def __mul__(self, coefficient: int):
         return Vector(self.X * coefficient, self.Y * coefficient, self.Z * coefficient)
 
+    def clen(self, other: 'Vector'):
+        return max(abs(self.X - other.X), abs(self.Y - other.Y), abs(self.Z - other.Z))
+
 
 # endregion
 
@@ -212,10 +215,10 @@ class BattleState(JSONCapability):
 # endregion
 
 
-def make_draft(data: dict) -> DraftChoice:
-    # TODO: parse input data
-    # TODO: Make draft
-    return DraftChoice()
+def make_draft(data: dict) -> dict:
+    global player_id
+    player_id = int(data['PlayerId'])
+    return {}
 
 
 def make_turn(data: dict) -> BattleOutput:
@@ -226,20 +229,27 @@ def make_turn(data: dict) -> BattleOutput:
     battle_output.UserCommands = []
 
     for ship in battle_state.My:
+        ship_size = int(len(ship.Equipment) ** 0.5) + 1
+        c = -1 if player_id else 1
         battle_output.UserCommands.append(
             UserCommand(
-                Command="MOVE", Parameters=MoveCommandParameters(ship.Id, Vector(15, 15, 15))
+                Command="MOVE", Parameters=MoveCommandParameters(
+                    ship.Id, Vector(15 + c * (ship.Id % 10) * ship_size - c * 2 * ship_size, 15, 10)
+                )
             )
         )
         guns = [x for x in ship.Equipment if isinstance(x, GunBlock)]
-        if guns:
-            battle_output.UserCommands.append(
-                UserCommand(
-                    Command="ATTACK", Parameters=AttackCommandParameters(
-                        ship.Id, guns[0].Name, Vector(15, 15, 15)
+        for gun in guns:
+            opponents = [opponent for opponent in battle_state.Opponent if
+                         ship.Position.clen(opponent.Position) <= gun.Radius + 1]
+            if opponents:
+                battle_output.UserCommands.append(
+                    UserCommand(
+                        Command="ATTACK", Parameters=AttackCommandParameters(
+                            ship.Id, gun.Name, opponents[0].Position + opponents[0].Velocity
+                        )
                     )
                 )
-            )
     return battle_output
 
 
@@ -254,4 +264,5 @@ def play_game():
 
 
 if __name__ == '__main__':
+    player_id = None
     play_game()
