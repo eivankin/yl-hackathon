@@ -82,21 +82,6 @@ class BattleOutput(JSONCapability):
 
 # endregion
 
-# region draft commands
-@dataclass
-class DraftChoice(JSONCapability):
-    # TODO Make draft choice
-    pass
-
-
-@dataclass
-class DraftOptions:
-    # TODO: Parse draft options
-    pass
-
-
-# endregion
-
 # region equipment
 
 class EquipmentType(Enum):
