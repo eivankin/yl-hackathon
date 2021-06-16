@@ -27,6 +27,15 @@ class Vector:
     def __str__(self):
         return f"{self.X}/{self.Y}/{self.Z}"
 
+    def __add__(self, other: 'Vector'):
+        return Vector(self.X + other.X, self.Y + other.Y, self.Z + other.Z)
+
+    def __sub__(self, other: 'Vector'):
+        return self + other * -1
+
+    def __mul__(self, coefficient: int):
+        return Vector(self.X * coefficient, self.Y * coefficient, self.Z * coefficient)
+
 
 # endregion
 
