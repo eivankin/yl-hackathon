@@ -225,8 +225,10 @@ def make_turn(data: dict) -> BattleOutput:
         )
         guns = [x for x in ship.Equipment if isinstance(x, GunBlock)]
         for gun in guns:
-            opponents = [opponent for opponent in battle_state.Opponent if
-                         ship.Position.clen(opponent.Position) <= gun.Radius + 1]
+            opponents = [
+                opponent for opponent in battle_state.Opponent
+                if ship.Position.clen(opponent.Position + opponent.Velocity) <= gun.Radius + 1
+            ]
             if opponents:
                 battle_output.UserCommands.append(
                     UserCommand(
