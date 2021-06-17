@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
+from itertools import product
 
 
 class JSONCapability:
@@ -33,11 +34,22 @@ class Vector:
     def __sub__(self, other: 'Vector'):
         return self + other * -1
 
-    def __mul__(self, coefficient: int):
+    def __mul__(self, coefficient: int) -> 'Vector':
         return Vector(self.X * coefficient, self.Y * coefficient, self.Z * coefficient)
 
-    def clen(self, other: 'Vector'):
+    def clen(self, other: 'Vector') -> int:
         return max(abs(self.X - other.X), abs(self.Y - other.Y), abs(self.Z - other.Z))
+
+    def __hash__(self):
+        return hash((self.X, self.Y, self.Z))
+
+    def __eq__(self, other: 'Vector') -> bool:
+        return (self.X, self.Y, self.Z) == (other.X, other.Y, other.Z)
+
+    def in_bounds(self) -> bool:
+        return all(0 + (ship_size // 2) * player_id < c <
+                   map_size - (ship_size // 2) * (1 - player_id)
+                   for c in (self.X, self.Y, self.Z))
 
 
 # endregion
@@ -212,17 +224,42 @@ def make_turn(data: dict) -> BattleOutput:
     battle_output.Message = f"I have {len(battle_state.My)} " \
                             f"ships and move to center of galaxy and shoot"
     battle_output.UserCommands = []
+    moves = set()
 
     for ship in battle_state.My:
-        ship_size = int(len(ship.Equipment) ** 0.5) + 1
-        c = -1 if player_id else 1
-        battle_output.UserCommands.append(
-            UserCommand(
-                Command="MOVE", Parameters=MoveCommandParameters(
-                    ship.Id, Vector(15 + c * (ship.Id % 10) * ship_size - c * 2 * ship_size, 15, 10)
+        engines = [e for e in ship.Equipment if isinstance(e, EngineBlock)]
+        if engines:
+            nearest_opponent = sorted(battle_state.Opponent,
+                                      key=lambda d: ship.Position.clen(d.Position))[0]
+
+            pos_black_list = set()
+            for x, y, z in product((0, ship_size // 2, -ship_size // 2), repeat=3):
+                dv = Vector(x, y, z)
+                pos_black_list |= {opponent.Position + opponent.Velocity + dv
+                                   for opponent in battle_state.Opponent} | \
+                    {fire.Target + dv for fire in battle_state.FireInfos}
+
+            step = engines[0].MaxAccelerate
+
+            positions_set = set(filter(
+                Vector.in_bounds,
+                map(lambda p: ship.Position + Vector(*p), product((0, step, -step), repeat=3)))
+            ) - pos_black_list - moves
+
+            if positions_set:
+                target_pos = min(positions_set, key=lambda v: abs(5 - nearest_opponent.Position.clen(v)))
+
+                for x, y, z in product((0, ship_size // 2, -ship_size // 2), repeat=3):
+                    moves.add(target_pos + Vector(x, y, z))
+
+                battle_output.UserCommands.append(
+                    UserCommand(
+                        Command="MOVE", Parameters=MoveCommandParameters(
+                            ship.Id, target_pos
+                        )
+                    )
                 )
-            )
-        )
+
         guns = [x for x in ship.Equipment if isinstance(x, GunBlock)]
         for gun in guns:
             opponents = [
@@ -233,7 +270,7 @@ def make_turn(data: dict) -> BattleOutput:
                 battle_output.UserCommands.append(
                     UserCommand(
                         Command="ATTACK", Parameters=AttackCommandParameters(
-                            ship.Id, gun.Name, opponents[0].Position + opponents[0].Velocity
+                            ship.Id, gun.Name, opponents[0].Position
                         )
                     )
                 )
@@ -251,5 +288,8 @@ def play_game():
 
 
 if __name__ == '__main__':
-    player_id = None
+    player_id = 0
+    # TODO: load variables from DraftOptions
+    map_size = 30
+    ship_size = 2
     play_game()
