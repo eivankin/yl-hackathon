@@ -218,27 +218,32 @@ def make_draft(data: dict) -> dict:
 
 
 def make_turn(data: dict) -> BattleOutput:
+    # TODO: move some actions to draft stage
+    global target
+
     battle_state = BattleState.from_json(data)
     battle_output = BattleOutput()
-    battle_output.Message = f"I have {len(battle_state.My)} " \
-                            f"ships and move to center of galaxy and shoot"
     battle_output.UserCommands = []
     moves = set()
 
     for ship in battle_state.My:
-        engines = [e for e in ship.Equipment if isinstance(e, EngineBlock)]
-        if engines:
-            nearest_opponent = sorted(battle_state.Opponent,
-                                      key=lambda d: ship.Position.clen(d.Position))[0]
+        if target is None or target not in battle_state.Opponent:
+            target = min(battle_state.Opponent,
+                         key=lambda o: (ship.Position.clen(o.Position), o.Health))
+        else:
+            # updating target position
+            target = next(filter(lambda o: o == target, battle_state.Opponent))
 
+        engine = next(filter(lambda e: isinstance(e, EngineBlock), ship.Equipment), None)
+        if engine is not None:
             pos_black_list = set()
             for x, y, z in product((0, ship_size // 2, -ship_size // 2), repeat=3):
                 dv = Vector(x, y, z)
                 pos_black_list |= {opponent.Position + opponent.Velocity + dv
-                                   for opponent in battle_state.Opponent} | \
-                    {fire.Target + dv for fire in battle_state.FireInfos}
+                                   for opponent in battle_state.Opponent} #| \
+                    # {fire.Target + dv for fire in battle_state.FireInfos}
 
-            step = engines[0].MaxAccelerate
+            step = engine.MaxAccelerate
 
             positions_set = set(filter(
                 Vector.in_bounds,
@@ -246,44 +251,57 @@ def make_turn(data: dict) -> BattleOutput:
             ) - pos_black_list - moves
 
             if positions_set:
-                target_pos = min(positions_set,
-                                 key=lambda v: abs(5 - nearest_opponent.Position.clen(v)))
+                target_pos = min(
+                    positions_set,
+                    key=lambda v: abs(5 - target.Position.clen(v)) + sum(map(
+                        lambda o: o.Position.clen(v) < 6,
+                        filter(lambda e: e.Id != target.Id, battle_state.Opponent)
+                    ))
+                )
 
-                for x, y, z in product((0, ship_size // 2, -ship_size // 2), repeat=3):
-                    moves.add(target_pos + Vector(x, y, z))
+                moves |= set(map(lambda p: target_pos + Vector(*p),
+                                 product((0, ship_size // 2, -ship_size // 2), repeat=3)))
 
                 battle_output.UserCommands.append(
                     UserCommand(
-                        Command="MOVE", Parameters=MoveCommandParameters(
-                            ship.Id, target_pos
-                        )
+                        Command='MOVE', Parameters=MoveCommandParameters(ship.Id, target_pos)
                     )
                 )
 
-        guns = [x for x in ship.Equipment if isinstance(x, GunBlock)]
-        for gun in guns:
-            opponents = [
-                opponent for opponent in battle_state.Opponent
-                if ship.Position.clen(opponent.Position + opponent.Velocity) <= gun.Radius + 1
-            ]
-            if opponents:
+        for gun in filter(lambda e: isinstance(e, GunBlock), ship.Equipment):
+            aim = None
+            r = gun.Radius
+
+            if ship.Position.clen(target.Position + target.Velocity) <= r + ship_size:
+                aim = target.Position + target.Velocity
+
+            else:
+                opponents = [
+                    opponent for opponent in battle_state.Opponent
+                    if ship.Position.clen(opponent.Position + opponent.Velocity) <= r + ship_size
+                ]
+                if opponents:
+                    opponent = min(opponents, key=lambda o: o.Health)
+                    aim = opponent.Position + opponent.Velocity
+
+            if aim is not None:
                 battle_output.UserCommands.append(
                     UserCommand(
-                        Command="ATTACK", Parameters=AttackCommandParameters(
-                            ship.Id, gun.Name, opponents[0].Position
-                        )
+                        Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
                     )
                 )
     return battle_output
 
 
 def play_game():
+    start = True
     while True:
         raw_line = input()
         line = json.loads(raw_line)
-        if 'PlayerId' in line:
+        if start:
             print(json.dumps(make_draft(line), default=lambda x: x.to_json(), ensure_ascii=False))
-        elif 'My' in line:
+            start = False
+        else:
             print(json.dumps(make_turn(line), default=lambda x: x.to_json(), ensure_ascii=False))
 
 
@@ -292,4 +310,5 @@ if __name__ == '__main__':
     # TODO: load variables from DraftOptions
     map_size = 30
     ship_size = 2
+    target = None
     play_game()
