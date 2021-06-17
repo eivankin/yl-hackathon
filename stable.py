@@ -47,8 +47,7 @@ class Vector:
         return (self.X, self.Y, self.Z) == (other.X, other.Y, other.Z)
 
     def in_bounds(self) -> bool:
-        return all(0 + (ship_size // 2) * player_id < c <
-                   map_size - (ship_size // 2) * (1 - player_id)
+        return all(ship_size * player_id < c < map_size - ship_size * (1 - player_id)
                    for c in (self.X, self.Y, self.Z))
 
 
@@ -247,7 +246,8 @@ def make_turn(data: dict) -> BattleOutput:
             ) - pos_black_list - moves
 
             if positions_set:
-                target_pos = min(positions_set, key=lambda v: abs(5 - nearest_opponent.Position.clen(v)))
+                target_pos = min(positions_set,
+                                 key=lambda v: abs(5 - nearest_opponent.Position.clen(v)))
 
                 for x, y, z in product((0, ship_size // 2, -ship_size // 2), repeat=3):
                     moves.add(target_pos + Vector(x, y, z))
