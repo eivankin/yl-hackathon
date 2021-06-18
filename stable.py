@@ -47,7 +47,7 @@ class Vector:
         return (self.X, self.Y, self.Z) == (other.X, other.Y, other.Z)
 
     def in_bounds(self) -> bool:
-        return all(all(0 <= c + d <= 30 for d in range(3)) for c in (self.X, self.Y, self.Z))
+        return all(all(0 < c + d < map_size for d in range(3)) for c in (self.X, self.Y, self.Z))
 
 
 # endregion
@@ -239,11 +239,9 @@ def make_turn(data: dict) -> BattleOutput:
         target = next(filter(lambda o: o == target, enemies))
 
     pos_black_list = set()
-    for p in product((0, ship_size // 2, -ship_size // 2), repeat=3):
+    for p in product(range(-ship_size, 1), repeat=3):
         dv = Vector(*p)
-        pos_black_list |= {opponent.Position + opponent.Velocity + dv
-                           for opponent in enemies} | \
-                          {fire.Target + dv for fire in battle_state.FireInfos}
+        pos_black_list |= {fire.Target + dv for fire in battle_state.FireInfos}
 
     non_target = enemies - {target}
 
@@ -252,7 +250,6 @@ def make_turn(data: dict) -> BattleOutput:
         if engine is not None:
             step = engine.MaxAccelerate
 
-            # TODO: avoid positions vulnerable for ramming (touching bounds)
             positions_set = set(filter(
                 Vector.in_bounds,
                 map(lambda v: ship.Position + Vector(*v), product((0, step, -step), repeat=3)))
@@ -269,7 +266,7 @@ def make_turn(data: dict) -> BattleOutput:
                 target_pos = ship.Position
 
             moves |= set(map(lambda v: target_pos + Vector(*v),
-                             product((0, ship_size // 2, -ship_size // 2), repeat=3)))
+                             product((0, 1, -1), repeat=3)))
 
             battle_output.UserCommands.append(
                 UserCommand(
