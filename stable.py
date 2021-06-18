@@ -47,7 +47,8 @@ class Vector:
         return (self.X, self.Y, self.Z) == (other.X, other.Y, other.Z)
 
     def in_bounds(self) -> bool:
-        return all(ship_size * player_id < c < map_size - ship_size * (1 - player_id)
+        return all(ship_size * (1 + player_id - first_step) < c <
+                   map_size - ship_size * (2 - player_id - first_step)
                    for c in (self.X, self.Y, self.Z))
 
 
@@ -180,6 +181,12 @@ class Ship(JSONCapability):
         data['Velocity'] = Vector.from_json(data['Velocity'])
         return cls(**data)
 
+    def __eq__(self, other: 'Ship') -> bool:
+        return self.Id == other.Id
+
+    def __hash__(self):
+        return hash(self.Id)
+
 
 @dataclass
 class FireInfo(JSONCapability):
@@ -218,48 +225,49 @@ def make_draft(data: dict) -> dict:
 
 
 def make_turn(data: dict) -> BattleOutput:
-    # TODO: move some actions to draft stage
-    global target
+    global target, first_step
 
     battle_state = BattleState.from_json(data)
     battle_output = BattleOutput()
     battle_output.UserCommands = []
     moves = set()
 
-    for ship in battle_state.My:
-        if target is None or target not in battle_state.Opponent:
-            target = min(battle_state.Opponent,
-                         key=lambda o: (ship.Position.clen(o.Position), o.Health))
-        else:
-            # updating target position
-            target = next(filter(lambda o: o == target, battle_state.Opponent))
+    enemies = set(battle_state.Opponent)
+    if target is None or target not in battle_state.Opponent:
+        target = min(enemies,
+                     key=lambda o: (battle_state.My[0].Position.clen(o.Position), o.Health))
+    else:
+        # updating target position
+        target = next(filter(lambda o: o == target, enemies))
 
+    pos_black_list = set()
+    for p in product((0, ship_size // 2, -ship_size // 2), repeat=3):
+        dv = Vector(*p)
+        pos_black_list |= {opponent.Position + opponent.Velocity + dv
+                           for opponent in enemies} | \
+                          {fire.Target + dv for fire in battle_state.FireInfos}
+
+    non_target = enemies - {target}
+
+    for ship in battle_state.My:
         engine = next(filter(lambda e: isinstance(e, EngineBlock), ship.Equipment), None)
         if engine is not None:
-            pos_black_list = set()
-            for x, y, z in product((0, ship_size // 2, -ship_size // 2), repeat=3):
-                dv = Vector(x, y, z)
-                pos_black_list |= {opponent.Position + opponent.Velocity + dv
-                                   for opponent in battle_state.Opponent} #| \
-                    # {fire.Target + dv for fire in battle_state.FireInfos}
-
             step = engine.MaxAccelerate
 
             positions_set = set(filter(
                 Vector.in_bounds,
-                map(lambda p: ship.Position + Vector(*p), product((0, step, -step), repeat=3)))
+                map(lambda v: ship.Position + Vector(*v), product((0, step, -step), repeat=3)))
             ) - pos_black_list - moves
 
             if positions_set:
                 target_pos = min(
                     positions_set,
                     key=lambda v: abs(5 - target.Position.clen(v)) + sum(map(
-                        lambda o: o.Position.clen(v) < 6,
-                        filter(lambda e: e.Id != target.Id, battle_state.Opponent)
+                        lambda o: o.Position.clen(v) < 6, non_target
                     ))
                 )
 
-                moves |= set(map(lambda p: target_pos + Vector(*p),
+                moves |= set(map(lambda v: target_pos + Vector(*v),
                                  product((0, ship_size // 2, -ship_size // 2), repeat=3)))
 
                 battle_output.UserCommands.append(
@@ -290,19 +298,16 @@ def make_turn(data: dict) -> BattleOutput:
                         Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
                     )
                 )
+    first_step = False
     return battle_output
 
 
 def play_game():
-    start = True
+    print(json.dumps(make_draft(json.loads(input())),
+                     default=lambda x: x.to_json(), ensure_ascii=False))
     while True:
-        raw_line = input()
-        line = json.loads(raw_line)
-        if start:
-            print(json.dumps(make_draft(line), default=lambda x: x.to_json(), ensure_ascii=False))
-            start = False
-        else:
-            print(json.dumps(make_turn(line), default=lambda x: x.to_json(), ensure_ascii=False))
+        print(json.dumps(make_turn(json.loads(input())),
+                         default=lambda x: x.to_json(), ensure_ascii=False))
 
 
 if __name__ == '__main__':
@@ -311,4 +316,5 @@ if __name__ == '__main__':
     map_size = 30
     ship_size = 2
     target = None
+    first_step = True
     play_game()
