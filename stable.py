@@ -47,9 +47,7 @@ class Vector:
         return (self.X, self.Y, self.Z) == (other.X, other.Y, other.Z)
 
     def in_bounds(self) -> bool:
-        return all(ship_size * (1 + player_id - first_step) < c <
-                   map_size - ship_size * (2 - player_id - first_step)
-                   for c in (self.X, self.Y, self.Z))
+        return all(all(0 <= c + d <= 30 for d in range(3)) for c in (self.X, self.Y, self.Z))
 
 
 # endregion
@@ -225,7 +223,7 @@ def make_draft(data: dict) -> dict:
 
 
 def make_turn(data: dict) -> BattleOutput:
-    global target, first_step
+    global target
 
     battle_state = BattleState.from_json(data)
     battle_output = BattleOutput()
@@ -254,6 +252,7 @@ def make_turn(data: dict) -> BattleOutput:
         if engine is not None:
             step = engine.MaxAccelerate
 
+            # TODO: avoid positions vulnerable for ramming (touching bounds)
             positions_set = set(filter(
                 Vector.in_bounds,
                 map(lambda v: ship.Position + Vector(*v), product((0, step, -step), repeat=3)))
@@ -266,15 +265,17 @@ def make_turn(data: dict) -> BattleOutput:
                         lambda o: o.Position.clen(v) < 6, non_target
                     ))
                 )
+            else:
+                target_pos = ship.Position
 
-                moves |= set(map(lambda v: target_pos + Vector(*v),
-                                 product((0, ship_size // 2, -ship_size // 2), repeat=3)))
+            moves |= set(map(lambda v: target_pos + Vector(*v),
+                             product((0, ship_size // 2, -ship_size // 2), repeat=3)))
 
-                battle_output.UserCommands.append(
-                    UserCommand(
-                        Command='MOVE', Parameters=MoveCommandParameters(ship.Id, target_pos)
-                    )
+            battle_output.UserCommands.append(
+                UserCommand(
+                    Command='MOVE', Parameters=MoveCommandParameters(ship.Id, target_pos)
                 )
+            )
 
         for gun in filter(lambda e: isinstance(e, GunBlock), ship.Equipment):
             aim = None
@@ -285,7 +286,7 @@ def make_turn(data: dict) -> BattleOutput:
 
             else:
                 opponents = [
-                    opponent for opponent in battle_state.Opponent
+                    opponent for opponent in non_target
                     if ship.Position.clen(opponent.Position + opponent.Velocity) <= r + ship_size
                 ]
                 if opponents:
@@ -298,7 +299,6 @@ def make_turn(data: dict) -> BattleOutput:
                         Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
                     )
                 )
-    first_step = False
     return battle_output
 
 
@@ -312,9 +312,7 @@ def play_game():
 
 if __name__ == '__main__':
     player_id = 0
-    # TODO: load variables from DraftOptions
     map_size = 30
     ship_size = 2
     target = None
-    first_step = True
     play_game()
