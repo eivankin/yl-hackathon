@@ -4,6 +4,10 @@ from enum import Enum
 from typing import List, Optional
 from itertools import product
 
+target = None
+map_size = 30
+ship_size = 2
+
 
 class JSONCapability:
     def to_json(self):
@@ -26,7 +30,7 @@ class Vector:
         return cls(x, y, z)
 
     def __str__(self):
-        return f"{self.X}/{self.Y}/{self.Z}"
+        return f'{self.X}/{self.Y}/{self.Z}'
 
     def __add__(self, other: 'Vector'):
         return Vector(self.X + other.X, self.Y + other.Y, self.Z + other.Z)
@@ -309,7 +313,4 @@ def play_game():
 
 if __name__ == '__main__':
     player_id = 0
-    map_size = 30
-    ship_size = 2
-    target = None
     play_game()
