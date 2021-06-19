@@ -1,5 +1,6 @@
 import json
 import time
+from multiprocessing import Process
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
@@ -8,6 +9,11 @@ from itertools import product
 target = None
 map_size = 30
 ship_size = 2
+
+
+def print_data(data: 'JSONCapability') -> None:
+    data.Message = f'Total retries count: {retries_count}'
+    print(json.dumps(data, default=lambda x: x.to_json(), ensure_ascii=False))
 
 
 class JSONCapability:
@@ -227,7 +233,7 @@ def make_draft(data: dict) -> dict:
     return {}
 
 
-def make_turn(data: dict) -> BattleOutput:
+def make_turn(data: dict, callback) -> None:
     global target
 
     battle_state = BattleState.from_json(data)
@@ -301,33 +307,36 @@ def make_turn(data: dict) -> BattleOutput:
                         Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
                     )
                 )
-
-    return battle_output
+    callback(battle_output)
 
 
 def play_game():
-    global max_time, moves_count, max_time_move
-
-    print(json.dumps(make_draft(json.loads(input())),
-                     default=lambda x: x.to_json(), ensure_ascii=False))
+    global retries_count
+    # print_data(make_draft(json.loads(input())))
+    print('{}')
     while True:
-        raw = input()
-        start_time = time.time()
-        result_dict = make_turn(json.loads(raw))
-
-        elapsed = (time.time() - start_time) * 1000
-
-        if max_time is None or elapsed > max_time:
-            max_time = elapsed
-            max_time_move = moves_count
-
-        result_dict.Message = f'Max time: {max_time:.3f} ms; max time move: {max_time_move}'
-        print(json.dumps(result_dict, default=lambda x: x.to_json(), ensure_ascii=False))
-        moves_count += 1
+        p = Process(target=make_turn, args=(json.loads(input()), print_data))
+        p.start()
+        cumtime = 0
+        curr_time = 0
+        while True:
+            if not p.is_alive():
+                break
+            if p.is_alive() and cumtime + curr_time > 0.8:
+                print('{"Message": "Oh no"}')
+                p.kill()
+                break
+            if p.is_alive() and curr_time > 0:
+                cumtime += curr_time
+                curr_time = 0
+                p.kill()
+                p.start()
+                retries_count += 1
+            time.sleep(0.1)
+            curr_time += 0.1
 
 
 if __name__ == '__main__':
+    retries_count = 0
     player_id = 0
-    max_time, max_time_move = None, 1
-    moves_count = 1
     play_game()
