@@ -1,4 +1,6 @@
 import json
+import time
+from multiprocessing import Process
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
@@ -7,6 +9,10 @@ from itertools import product
 target = None
 map_size = 30
 ship_size = 2
+
+
+def print_data(data: 'JSONCapability') -> None:
+    print(json.dumps(data, default=lambda x: x.to_json(), ensure_ascii=False))
 
 
 class JSONCapability:
@@ -118,11 +124,11 @@ class EquipmentBlock(JSONCapability):
     def from_json(cls, data):
         if EquipmentType(data['Type']) == EquipmentType.Energy:
             return EnergyBlock(**data)
-        elif EquipmentType(data['Type']) == EquipmentType.Gun:
+        if EquipmentType(data['Type']) == EquipmentType.Gun:
             return GunBlock(**data)
-        elif EquipmentType(data['Type']) == EquipmentType.Engine:
+        if EquipmentType(data['Type']) == EquipmentType.Engine:
             return EngineBlock(**data)
-        elif EquipmentType(data['Type']) == EquipmentType.Health:
+        if EquipmentType(data['Type']) == EquipmentType.Health:
             return HealthBlock(**data)
 
 
@@ -226,7 +232,7 @@ def make_draft(data: dict) -> dict:
     return {}
 
 
-def make_turn(data: dict) -> BattleOutput:
+def make_turn(data: dict, callback) -> None:
     global target
 
     battle_state = BattleState.from_json(data)
@@ -300,15 +306,24 @@ def make_turn(data: dict) -> BattleOutput:
                         Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
                     )
                 )
-    return battle_output
+    callback(battle_output)
 
 
 def play_game():
-    print(json.dumps(make_draft(json.loads(input())),
-                     default=lambda x: x.to_json(), ensure_ascii=False))
+    print_data(make_draft(json.loads(input())))
     while True:
-        print(json.dumps(make_turn(json.loads(input())),
-                         default=lambda x: x.to_json(), ensure_ascii=False))
+        p = Process(target=make_turn, args=(json.loads(input()), print_data))
+        p.start()
+        cumtime = 0
+        while True:
+            if not p.is_alive():
+                break
+            if p.is_alive() and cumtime > 0.7:
+                print('{"Message": "Oh no"}')
+                p.kill()
+                break
+            time.sleep(0.1)
+            cumtime += 0.1
 
 
 if __name__ == '__main__':
