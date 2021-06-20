@@ -245,8 +245,7 @@ def make_turn(data: dict) -> BattleOutput:
 
     pos_black_list = set()
     for p in product(range(-ship_size, 1), repeat=3):
-        dv = Vector(*p)
-        pos_black_list |= {fire.Target + dv for fire in battle_state.FireInfos}
+        pos_black_list |= {fire.Target + Vector(*p) for fire in battle_state.FireInfos}
 
     non_target = enemies - {target}
 
