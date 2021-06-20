@@ -315,7 +315,8 @@ def play_game():
     # print_data(make_draft(json.loads(input())))
     print('{}')
     while True:
-        p = Process(target=make_turn, args=(json.loads(input()), print_data))
+        data = json.loads(input())
+        p = Process(target=make_turn, args=(data, print_data))
         p.start()
         cumtime = 0
         curr_time = 0
