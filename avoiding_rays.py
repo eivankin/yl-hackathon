@@ -1,6 +1,5 @@
 import json
 import time
-from multiprocessing import Process
 from dataclasses import dataclass
 from enum import Enum
 from typing import List, Optional
@@ -9,11 +8,6 @@ from itertools import product
 target = None
 map_size = 30
 ship_size = 2
-
-
-def print_data(data: 'JSONCapability') -> None:
-    data.Message = f'Total retries count: {retries_count}'
-    print(json.dumps(data, default=lambda x: x.to_json(), ensure_ascii=False))
 
 
 class JSONCapability:
@@ -59,6 +53,32 @@ class Vector:
 
     def in_bounds(self) -> bool:
         return all(all(0 < c + d < map_size for d in range(3)) for c in (self.X, self.Y, self.Z))
+
+    def bresenham(self, other: 'Vector') -> List['Vector']:
+        visited = []
+
+        v0 = [self.X, self.Y, self.Z]
+        v1 = [other.X, other.Y, other.Z]
+
+        d, dirs = [], []
+        for a, b in zip(v0, v1):
+            d.append(abs(a - b))
+            dirs.append(1 if a < b else -1)
+
+        max_len = max(d)
+        c = [max_len // 2] * 3
+
+        for _ in range(max_len):
+            visited.append(Vector(*v0))
+
+            for i in range(3):
+                c[i] -= d[i]
+                if c[i] < 0:
+                    c[i] += max_len
+                    v0[i] += dirs[i]
+
+        visited.append(Vector(*v1))
+        return visited
 
 
 # endregion
@@ -233,7 +253,7 @@ def make_draft(data: dict) -> dict:
     return {}
 
 
-def make_turn(data: dict, callback) -> None:
+def make_turn(data: dict) -> BattleOutput:
     global target
 
     battle_state = BattleState.from_json(data)
@@ -251,10 +271,11 @@ def make_turn(data: dict, callback) -> None:
 
     pos_black_list = set()
     for p in product(range(-ship_size, 1), repeat=3):
-        dv = Vector(*p)
-        pos_black_list |= {fire.Target + dv for fire in battle_state.FireInfos}
+        pos_black_list |= {v + Vector(*p) for fire in battle_state.FireInfos
+                           for v in fire.Source.bresenham(fire.Target)}
 
     non_target = enemies - {target}
+    target_next_pos = target.Position + target.Velocity
 
     for ship in battle_state.My:
         engine = next(filter(lambda e: isinstance(e, EngineBlock), ship.Equipment), None)
@@ -269,8 +290,8 @@ def make_turn(data: dict, callback) -> None:
             if positions_set:
                 target_pos = min(
                     positions_set,
-                    key=lambda v: abs(5 - target.Position.clen(v)) + sum(map(
-                        lambda o: o.Position.clen(v) < 6, non_target
+                    key=lambda v: abs(5 - target_next_pos.clen(v)) + sum(map(
+                        lambda o: (o.Position + o.Velocity).clen(v) < 6, non_target
                     ))
                 )
             else:
@@ -289,8 +310,8 @@ def make_turn(data: dict, callback) -> None:
             aim = None
             r = gun.Radius
 
-            if ship.Position.clen(target.Position + target.Velocity) <= r + ship_size:
-                aim = target.Position + target.Velocity
+            if ship.Position.clen(target_next_pos) <= r + ship_size:
+                aim = target_next_pos
 
             else:
                 opponents = [
@@ -307,37 +328,33 @@ def make_turn(data: dict, callback) -> None:
                         Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
                     )
                 )
-    callback(battle_output)
+
+    return battle_output
 
 
 def play_game():
-    global retries_count
-    # print_data(make_draft(json.loads(input())))
-    print('{}')
+    global max_time, moves_count, max_time_move
+
+    print(json.dumps(make_draft(json.loads(input())),
+                     default=lambda x: x.to_json(), ensure_ascii=False))
     while True:
-        data = json.loads(input())
-        p = Process(target=make_turn, args=(data, print_data))
-        p.start()
-        cumtime = 0
-        curr_time = 0
-        while True:
-            if not p.is_alive():
-                break
-            if p.is_alive() and cumtime + curr_time > 0.8:
-                print('{"Message": "Oh no"}')
-                p.kill()
-                break
-            if p.is_alive() and curr_time > 0:
-                cumtime += curr_time
-                curr_time = 0
-                p.kill()
-                p.start()
-                retries_count += 1
-            time.sleep(0.1)
-            curr_time += 0.1
+        raw = input()
+        start_time = time.time()
+        result_dict = make_turn(json.loads(raw))
+
+        elapsed = (time.time() - start_time) * 1000
+
+        if max_time is None or elapsed > max_time:
+            max_time = elapsed
+            max_time_move = moves_count
+
+        result_dict.Message = f'Max time: {max_time:.3f} ms; max time move: {max_time_move}'
+        print(json.dumps(result_dict, default=lambda x: x.to_json(), ensure_ascii=False))
+        moves_count += 1
 
 
 if __name__ == '__main__':
-    retries_count = 0
     player_id = 0
+    max_time, max_time_move = None, 1
+    moves_count = 1
     play_game()
