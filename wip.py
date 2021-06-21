@@ -216,8 +216,8 @@ class DraftOptions:
     MapSize: int
     Money: int
     MaxShipsCount: int
-    DraftTimeout: int
-    BattleRoundTimeout: int
+    # DraftTimeout: int
+    # BattleRoundTimeout: int
     StartArea: dict[str, Vector]
     Equipment: List[DraftEquipment]
     CompleteShips: List[DraftCompleteShip]
