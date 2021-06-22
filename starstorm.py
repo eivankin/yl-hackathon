@@ -206,7 +206,7 @@ class FireInfo(JSONCapability):
 
 @dataclass
 class BattleState(JSONCapability):
-    FireInfos: List[FireInfo]
+    # FireInfos: List[FireInfo]
     My: List[Ship]
     Opponent: List[Ship]
 
@@ -214,17 +214,30 @@ class BattleState(JSONCapability):
     def from_json(cls, data):
         my = list(map(Ship.from_json, data['My']))
         opponent = list(map(Ship.from_json, data['Opponent']))
-        fire_infos = list(map(FireInfo.from_json, data['FireInfos']))
-        return cls(fire_infos, my, opponent)
+        # fire_infos = list(map(FireInfo.from_json, data['FireInfos']))
+        return cls(my, opponent)
 
 
 # endregion
 
 
 def make_draft(data: dict) -> dict:
-    global player_id
-    player_id = int(data['PlayerId'])
-    return {}
+    result = {'Ships': []}
+    money = int(data['Money'])
+    max_count = 5
+    prices = {s['Id']: int(s['Price']) for s in data['CompleteShips']}
+    counts = [0, 0]
+    for i in range(max_count):
+        if money >= prices['starstorm'] + (max_count - i) * prices['scout']:
+            result['Ships'].append({'CompleteShipId': 'starstorm', 'Position': None})
+            money -= prices['starstorm']
+            counts[0] += 1
+        elif money >= prices['scout']:
+            result['Ships'].append({'CompleteShipId': 'scout', 'Position': None})
+            counts[1] += 1
+            money -= prices['scout']
+    result['Message'] = f'I have {counts[0]} starstorms and {counts[1]} scouts'
+    return result
 
 
 def make_turn(data: dict) -> BattleOutput:
@@ -244,12 +257,36 @@ def make_turn(data: dict) -> BattleOutput:
         target = next(filter(lambda o: o == target, enemies))
 
     pos_black_list = set()
-    for p in product(range(-ship_size, 1), repeat=3):
-        pos_black_list |= {fire.Target + Vector(*p) for fire in battle_state.FireInfos}
+    # for p in product(range(-ship_size, 1), repeat=3):
+    #     pos_black_list |= {fire.Target + Vector(*p) for fire in battle_state.FireInfos}
 
     non_target = enemies - {target}
+    r = None
 
     for ship in battle_state.My:
+        for gun in filter(lambda e: isinstance(e, GunBlock), ship.Equipment):
+            aim = None
+            r = gun.Radius
+
+            if ship.Position.clen(target.Position) <= r + ship_size:
+                aim = target.Position
+
+            else:
+                opponents = [
+                    opponent for opponent in non_target
+                    if ship.Position.clen(opponent.Position) <= r + ship_size
+                ]
+                if opponents:
+                    opponent = min(opponents, key=lambda o: o.Health)
+                    aim = opponent.Position
+
+            if aim is not None:
+                battle_output.UserCommands.append(
+                    UserCommand(
+                        Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
+                    )
+                )
+
         engine = next(filter(lambda e: isinstance(e, EngineBlock), ship.Equipment), None)
         if engine is not None:
             step = engine.MaxAccelerate
@@ -260,6 +297,7 @@ def make_turn(data: dict) -> BattleOutput:
             ) - pos_black_list - moves
 
             if positions_set:
+                r = r or 5
                 target_pos = min(
                     positions_set,
                     key=lambda v: abs(5 - target.Position.clen(v)) + sum(map(
@@ -278,28 +316,7 @@ def make_turn(data: dict) -> BattleOutput:
                 )
             )
 
-        for gun in filter(lambda e: isinstance(e, GunBlock), ship.Equipment):
-            aim = None
-            r = gun.Radius
 
-            if ship.Position.clen(target.Position + target.Velocity) <= r + ship_size:
-                aim = target.Position + target.Velocity
-
-            else:
-                opponents = [
-                    opponent for opponent in non_target
-                    if ship.Position.clen(opponent.Position + opponent.Velocity) <= r + ship_size
-                ]
-                if opponents:
-                    opponent = min(opponents, key=lambda o: o.Health)
-                    aim = opponent.Position + opponent.Velocity
-
-            if aim is not None:
-                battle_output.UserCommands.append(
-                    UserCommand(
-                        Command='ATTACK', Parameters=AttackCommandParameters(ship.Id, gun.Name, aim)
-                    )
-                )
 
     return battle_output
 
@@ -326,7 +343,6 @@ def play_game():
 
 
 if __name__ == '__main__':
-    player_id = 0
     max_time, max_time_move = None, 1
     moves_count = 1
     play_game()
