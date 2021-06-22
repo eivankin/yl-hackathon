@@ -194,19 +194,20 @@ class Ship(JSONCapability):
 @dataclass
 class FireInfo(JSONCapability):
     EffectType: EffectType
-    Source: Vector
-    Target: Vector
+    Source: Optional[Vector] = None
+    Target: Optional[Vector] = None
 
     @classmethod
     def from_json(cls, data):
-        data['Source'] = Vector.from_json(data['Source'])
-        data['Target'] = Vector.from_json(data['Target'])
+        if 'Source' in data:
+            data['Source'] = Vector.from_json(data['Source'])
+            data['Target'] = Vector.from_json(data['Target'])
         return cls(**data)
 
 
 @dataclass
 class BattleState(JSONCapability):
-    # FireInfos: List[FireInfo]
+    FireInfos: List[FireInfo]
     My: List[Ship]
     Opponent: List[Ship]
 
@@ -214,8 +215,8 @@ class BattleState(JSONCapability):
     def from_json(cls, data):
         my = list(map(Ship.from_json, data['My']))
         opponent = list(map(Ship.from_json, data['Opponent']))
-        # fire_infos = list(map(FireInfo.from_json, data['FireInfos']))
-        return cls(my, opponent)
+        fire_infos = list(map(FireInfo.from_json, data['FireInfos']))
+        return cls(fire_infos, my, opponent)
 
 
 # endregion
@@ -256,9 +257,12 @@ def make_turn(data: dict) -> BattleOutput:
         # updating target position
         target = next(filter(lambda o: o == target, enemies))
 
+    aim_to_target = target.Position + target.Velocity
+
     pos_black_list = set()
-    # for p in product(range(-ship_size, 1), repeat=3):
-    #     pos_black_list |= {fire.Target + Vector(*p) for fire in battle_state.FireInfos}
+    filtered_fire = list(filter(lambda x: x.Source is not None, battle_state.FireInfos))
+    for p in product(range(-ship_size, 1), repeat=3):
+        pos_black_list |= {fire.Target + Vector(*p) for fire in filtered_fire}
 
     non_target = enemies - {target}
     r = None
@@ -268,17 +272,17 @@ def make_turn(data: dict) -> BattleOutput:
             aim = None
             r = gun.Radius
 
-            if ship.Position.clen(target.Position) <= r + ship_size:
-                aim = target.Position
+            if ship.Position.clen(aim_to_target) <= r + ship_size:
+                aim = aim_to_target
 
             else:
                 opponents = [
                     opponent for opponent in non_target
-                    if ship.Position.clen(opponent.Position) <= r + ship_size
+                    if ship.Position.clen(opponent.Position + opponent.Velocity) <= r + ship_size
                 ]
                 if opponents:
                     opponent = min(opponents, key=lambda o: o.Health)
-                    aim = opponent.Position
+                    aim = opponent.Position + opponent.Velocity
 
             if aim is not None:
                 battle_output.UserCommands.append(
@@ -300,9 +304,9 @@ def make_turn(data: dict) -> BattleOutput:
                 r = r or 5
                 target_pos = min(
                     positions_set,
-                    key=lambda v: abs(5 - target.Position.clen(v)) + sum(map(
-                        lambda o: o.Position.clen(v) < 6, non_target
-                    ))
+                    key=lambda v: (abs(r - target.Position.clen(v)), sum(map(
+                        lambda o: o.Position.clen(v) < r + 1, non_target
+                    )))
                 )
             else:
                 target_pos = ship.Position
@@ -315,8 +319,6 @@ def make_turn(data: dict) -> BattleOutput:
                     Command='MOVE', Parameters=MoveCommandParameters(ship.Id, target_pos)
                 )
             )
-
-
 
     return battle_output
 
